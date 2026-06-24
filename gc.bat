@@ -1,1 +1,1 @@
-git add -A && git commit -m "Fix getPublicState: add winners/actionsLeft/rpsChoices for client"
+git add -A && git commit -m "Fix RPS phase check + add add_ai handler"

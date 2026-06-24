@@ -117,6 +117,27 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      case 'add_ai': {
+        const room = rooms.get(currentRoomId);
+        if (!room || !room.players.find(p => p.id === currentPlayerId)) return;
+        // 只有房主可以加AI
+        if (room.players.length > 0 && room.players[0].id !== currentPlayerId) {
+          safeSend(ws, JSON.stringify({ type: 'error', msg: '只有房主可以添加AI' }));
+          break;
+        }
+        if (room.players.length >= 4) {
+          safeSend(ws, JSON.stringify({ type: 'error', msg: '房间已满' }));
+          break;
+        }
+        const aiId = uuidv4().slice(0, 6);
+        const aiName = msg.aiName || 'AI-' + (room.players.length + 1);
+        room.players.push({ id: aiId, name: aiName, ws: null, isAI: true, diff: msg.diff || 'normal', ready: true });
+        broadcastToRoom(currentRoomId, { type: 'room_update', players: getRoomPlayers(room) });
+        // AI自动准备
+        if (room.players.every(p => p.ready) && room.players.length >= 2) startGame(room);
+        break;
+      }
+
       case 'set_ready': {
         const room = rooms.get(currentRoomId);
         if (!room) return;

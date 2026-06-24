@@ -159,9 +159,9 @@ function createGame(config) {
       G.phase = 'rps_cover';
     },
 
-    // 玩家出拳
+    // 玩家出拳（允许在 rps_cover 和 rps_pick 阶段出拳）
     playerRpsPick(pid, hand) {
-      if (G.phase !== 'rps_pick') return;
+      if (G.phase !== 'rps_pick' && G.phase !== 'rps_cover') return;
       const p = getP(pid);
       if (!p || p.isAI) return;
       G.rpsChoices[pid] = hand;
