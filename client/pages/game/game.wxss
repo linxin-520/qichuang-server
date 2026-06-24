@@ -1,0 +1,75 @@
+.game { display: flex; flex-direction: column; height: 100vh; padding: 8px; box-sizing: border-box; }
+.header { text-align: center; padding: 4px 0; border-bottom: 1px solid #333; flex-shrink: 0; }
+.round { font-size: 16px; font-weight: 900; color: #f0a030; }
+.event { font-size: 12px; color: #9a90a8; }
+
+.player-list { display: flex; gap: 4px; overflow-x: auto; flex-shrink: 0; padding: 6px 0; white-space: nowrap; }
+.pcard { flex: 0 0 auto; min-width: 80px; background: #252030; border-radius: 10px; padding: 6px 8px; text-align: center; border: 2px solid transparent; }
+.pcard.me { border-color: #f0a030; }
+.pcard.dead { opacity: .35; }
+.pname { font-size: 11px; font-weight: 700; }
+.php { font-size: 12px; }
+.ploc { font-size: 9px; color: #9a90a8; overflow: hidden; text-overflow: ellipsis; }
+.pitems { font-size: 10px; min-height: 14px; }
+.pstatus { font-size: 9px; color: #40c870; }
+
+.my-info { display: flex; justify-content: space-between; padding: 6px; background: #252030; border-radius: 8px; margin: 4px 0; font-size: 12px; flex-shrink: 0; }
+.my-money { color: #f0a030; }
+.my-actions { color: #4a90e8; }
+
+.event-banner { background: #2e2838; border-radius: 8px; padding: 6px 10px; margin: 4px 0; font-size: 12px; color: #f0a030; text-align: center; flex-shrink: 0; }
+
+/* ===== 阶段通用 ===== */
+.screen { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; gap: 12px; }
+.screen-title { font-size: 20px; font-weight: 900; }
+.screen-desc { font-size: 14px; color: #9a90a8; }
+
+/* ===== 阶段横幅 ===== */
+.phase-banner { text-align: center; padding: 8px 0; flex-shrink: 0; }
+.phase-title { font-size: 14px; font-weight: 700; color: #f0a030; }
+.phase-desc { font-size: 11px; color: #7a7088; margin-left: 6px; }
+
+/* ===== 回合开始转场动画 ===== */
+.round-start { animation: fadeIn 0.4s ease; }
+.round-start-icon { font-size: 56px; animation: bounce 0.6s ease infinite alternate; }
+.round-start-text { font-size: 36px; font-weight: 900; color: #f0a030; margin-top: 8px; }
+.round-start-sub { font-size: 20px; color: #e87830; margin-top: 4px; }
+.round-start-bar { width: 60px; height: 3px; background: linear-gradient(90deg, #f0a030, #e87830); border-radius: 2px; margin-top: 16px; animation: expandBar 1.2s ease-out; }
+
+@keyframes fadeIn { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
+@keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-10px); } }
+@keyframes expandBar { from { width: 0; } to { width: 60px; } }
+
+/* ===== RPS 类型标签 ===== */
+.rps-type-badge { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+.rps-type-badge.order { background: #3a3050; color: #f0a030; border: 1px solid #f0a030; }
+.rps-type-badge.combat { background: #4a2030; color: #e85050; border: 1px solid #e85050; }
+
+/* ===== RPS 猜拳 ===== */
+.rps-choices { display: flex; gap: 12px; margin-top: 12px; }
+.rps-btn { width: 80px; height: 90px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #2e2838; border-radius: 10px; font-size: 32px; }
+.rps-btn:active { transform: scale(0.92); background: #3e3850; }
+.rps-btn text { font-size: 12px; font-weight: 700; margin-top: 4px; }
+.rps-result { display: flex; gap: 12px; align-items: center; font-size: 16px; }
+.rps-combat-label { font-size: 16px; font-weight: 700; color: #e85050; text-align: center; padding: 8px; }
+
+/* ===== 行动阶段 ===== */
+.actions { flex: 1; overflow-y: auto; }
+.act-section { background: #252030; border-radius: 10px; padding: 10px; margin-bottom: 6px; }
+.act-title { font-size: 12px; color: #9a90a8; margin-bottom: 6px; display: block; }
+.act-btn { padding: 10px 12px; background: #2e2838; border-radius: 8px; margin-bottom: 4px; font-size: 14px; }
+.act-btn:active { background: #3e3850; }
+.act-btn-note { font-size: 10px; color: #7a7088; margin-left: 6px; }
+
+/* ===== 回合结束 ===== */
+.round-end-icon { font-size: 48px; animation: bounce 0.6s ease infinite alternate; }
+
+/* ===== 按钮 ===== */
+.btn { width: 100%; max-width: 280px; padding: 12px 20px; border-radius: 40px; font-size: 16px; font-weight: 700; text-align: center; }
+.btn.primary { background: linear-gradient(135deg, #f0a030, #e87830); color: #1a1520; }
+
+/* ===== 日志 ===== */
+.log { flex-shrink: 0; max-height: 120px; background: #252030; border-radius: 8px; padding: 6px 8px; margin-top: 4px; font-size: 11px; }
+.log-item { padding: 2px 0; border-bottom: 1px solid #2a2535; color: #9a90a8; }
+.log-item.kill { color: #e84040; }
+.log-item.good { color: #40c060; }

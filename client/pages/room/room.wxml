@@ -1,0 +1,25 @@
+<view class="room">
+  <text class="title">🛏️ 房间 {{roomId}}</text>
+  <text class="hint">分享房间号给朋友一起玩</text>
+
+  <view class="player-list">
+    <view class="player-item" wx:for="{{players}}" wx:key="id">
+      <text class="player-name" style="color:{{item.color}}">{{item.name}}</text>
+      <text class="player-status {{item.ready?'ready':''}}">{{item.ready?'✅ 已准备':'⏳ 未准备'}}</text>
+    </view>
+    <view class="player-item empty" wx:if="{{players.length < 4}}">
+      <text class="player-name">等待玩家加入...</text>
+    </view>
+  </view>
+
+  <view class="actions">
+    <button class="btn {{myReady?'cancel':'primary'}}" bindtap="toggleReady">
+      {{myReady?'❌ 取消准备':'✅ 准备'}}
+    </button>
+    <button class="btn secondary" bindtap="startGame" wx:if="{{isHost}}">
+      🎮 开始游戏（{{players.length}}人）
+    </button>
+  </view>
+
+  <view class="hint">💡 至少2人准备后自动开始</view>
+</view>

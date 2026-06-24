@@ -1,0 +1,13 @@
+{
+  "name": "qichuang-server",
+  "version": "1.0.0",
+  "description": "起床！大逃杀桌游 - 服务端",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0",
+    "uuid": "^9.0.0"
+  }
+}

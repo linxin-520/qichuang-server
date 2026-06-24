@@ -1,0 +1,26 @@
+<view class="setup">
+  <text class="title">🛏️ 起床</text>
+  <text class="subtitle">大逃杀桌游</text>
+
+  <view class="card">
+    <text class="label">你的昵称</text>
+    <input class="input" placeholder="输入昵称" value="{{playerName}}" bindinput="onNameInput" />
+  </view>
+
+  <view class="card">
+    <view class="btn-row">
+      <button class="btn primary" bindtap="createRoom">➕ 创建房间</button>
+    </view>
+    <view class="divider"><text>或</text></view>
+    <text class="label">加入已有房间</text>
+    <view class="input-row">
+      <input class="input" placeholder="输入房间号" value="{{roomIdInput}}" bindinput="onRoomIdInput" />
+      <button class="btn secondary" bindtap="joinRoom">加入</button>
+    </view>
+  </view>
+
+  <view class="tips">
+    <text class="tip">💡 创建房间后，把房间号分享给朋友即可加入</text>
+    <text class="tip">🔄 支持 2-4 人对战</text>
+  </view>
+</view>

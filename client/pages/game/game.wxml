@@ -1,0 +1,140 @@
+<view class="game">
+  <!-- 回合信息 -->
+  <view class="header">
+    <text class="round">第 {{round}} 回合</text>
+    <text class="event" wx:if="{{event}}">{{event.icon}} {{event.name}}</text>
+  </view>
+
+  <!-- 玩家列表 -->
+  <scroll-view class="player-list" scroll-y>
+    <view class="pcard {{item.status=='dead'?'dead':''}} {{item.id==myId?'me':''}}" wx:for="{{players}}" wx:key="id">
+      <view class="pname" style="color:{{item.color}}">
+        {{item.name}}{{item.kills>=2?' 🏴':''}}{{item.hidden?' 👻':''}}
+      </view>
+      <view class="php">{{item.status=='dead'?'💀':item.hpDisplay}}</view>
+      <view class="ploc" wx:if="{{item.loc}}">📍{{getLocName(item.loc)}}</view>
+      <view class="pitems">{{getItemIcons(item.items)}}</view>
+      <view class="pstatus" wx:if="{{item.poisoned}}">🧪中毒</view>
+    </view>
+  </scroll-view>
+
+  <!-- 自己信息 -->
+  <view class="my-info">
+    <text class="my-money">💰{{myMoney}} | 背包{{myItems.length}}/5</text>
+    <text class="my-actions" wx:if="{{actionsLeft>0}}">🔵剩余{{actionsLeft}}行动点</text>
+  </view>
+
+  <!-- 事件显示 -->
+  <view class="event-banner" wx:if="{{event && !displayOverride}}">
+    <text>{{event.icon}} {{event.name}} — {{event.desc}}</text>
+  </view>
+
+  <!-- ========== 转场动画：新回合开始 ========== -->
+  <view class="screen round-start" wx:if="{{displayOverride=='round_start'}}">
+    <view class="round-start-icon">📯</view>
+    <view class="round-start-text">第 {{round}} 回合</view>
+    <view class="round-start-sub">开始！</view>
+    <view class="round-start-bar"></view>
+  </view>
+
+  <!-- ========== 游戏阶段（仅在非转场时显示） ========== -->
+  <block wx:else>
+    <!-- 阶段标题 -->
+    <view class="phase-banner" wx:if="{{displayTitle}}">
+      <text class="phase-title">{{displayTitle}}</text>
+      <text class="phase-desc">{{displayDesc}}</text>
+    </view>
+
+    <!-- 回合开始猜拳 - 等待 -->
+    <view class="screen" wx:if="{{phase=='rps_cover'}}">
+      <view class="rps-type-badge order">🏁 行动顺序</view>
+      <text class="screen-desc">等待所有人出拳...</text>
+    </view>
+
+    <!-- 回合开始猜拳 - 出拳 -->
+    <view class="screen rps" wx:elif="{{phase=='rps_pick'}}">
+      <view class="rps-type-badge order">🏁 行动顺序</view>
+      <view class="rps-choices">
+        <view class="rps-btn" bindtap="rpsPick" data-hand="rock">✊<text>石头</text></view>
+        <view class="rps-btn" bindtap="rpsPick" data-hand="scissors">✌️<text>剪刀</text></view>
+        <view class="rps-btn" bindtap="rpsPick" data-hand="paper">✋<text>布</text></view>
+      </view>
+    </view>
+
+    <!-- 回合开始猜拳 - 揭晓 -->
+    <view class="screen" wx:elif="{{phase=='rps_reveal'}}">
+      <view class="rps-type-badge order">🏁 行动顺序</view>
+      <view class="rps-result" wx:for="{{players}}" wx:key="id">
+        <text style="color:{{item.color}}">{{item.name}}</text>
+        <text>{{rpsChoices[item.id]}}</text>
+      </view>
+      <button class="btn primary" bindtap="confirmRps">确认结果</button>
+    </view>
+
+    <!-- 行动阶段 - 我的回合 -->
+    <scroll-view class="actions" wx:elif="{{phase=='act_turn' && myTurn}}" scroll-y>
+      <view class="act-section">
+        <text class="act-title">🚶 移动</text>
+        <view class="act-btn" wx:for="{{moveTargets}}" wx:key="id" bindtap="doAction" data-action="move" data-target="{{item.id}}">
+          <text>{{item.icon}} {{item.name}}</text>
+          <text class="act-btn-note" wx:if="{{item.players}}">{{item.players}}</text>
+        </view>
+      </view>
+
+      <view class="act-section" wx:if="{{nearby.length>0}}">
+        <text class="act-title">⚔️ 近战攻击</text>
+        <view class="act-btn" wx:for="{{nearby}}" wx:key="id" bindtap="doAction" data-action="punch" data-target="{{item.id}}">
+          <text>👊 击晕 {{item.name}}</text>
+        </view>
+      </view>
+
+      <view class="act-section">
+        <text class="act-title">⏭️ 其他</text>
+        <view class="act-btn" bindtap="doAction" data-action="skip">
+          <text>⏭️ 跳过本回合</text>
+        </view>
+      </view>
+    </scroll-view>
+
+    <!-- 行动阶段 - 等其他人 -->
+    <view class="screen" wx:elif="{{phase=='act_turn' && !myTurn}}">
+      <text class="screen-title">⏳ 等待其他玩家...</text>
+    </view>
+
+    <!-- 战斗猜拳 / 炸弹 / 技能 -->
+    <view class="screen" wx:elif="{{phase=='act_rps'}}">
+      <view class="rps-type-badge combat">⚔️ {{rpsType=='bomb_self'?'炸弹反噬':rpsType=='bomb_target'?'炸弹求生':'战斗对决'}}</view>
+      <text class="rps-combat-label">{{rpsLabel}}</text>
+      <block wx:if="{{rpsMyTurn}}">
+        <view class="rps-choices">
+          <view class="rps-btn" bindtap="rpsSubmit" data-hand="rock">✊<text>石头</text></view>
+          <view class="rps-btn" bindtap="rpsSubmit" data-hand="scissors">✌️<text>剪刀</text></view>
+          <view class="rps-btn" bindtap="rpsSubmit" data-hand="paper">✋<text>布</text></view>
+        </view>
+      </block>
+      <text class="screen-desc" wx:else>⏳ 等待对方出拳...</text>
+    </view>
+
+    <!-- 回合结束 -->
+    <view class="screen" wx:elif="{{phase=='round_end'}}">
+      <view class="round-end-icon">📯</view>
+      <text class="screen-title">第 {{round}} 回合结束</text>
+      <button class="btn primary" bindtap="nextRound">下一回合</button>
+    </view>
+
+    <!-- 游戏结束 -->
+    <view class="screen" wx:elif="{{phase=='gameover'}}">
+      <view class="crown">👑</view>
+      <text class="winner" wx:if="{{winner}}" style="color:{{winner.color}}">{{winner.name}} 胜利！</text>
+      <text class="winner" wx:else>全军覆没</text>
+      <button class="btn primary" bindtap="backToLobby">返回大厅</button>
+    </view>
+  </block>
+
+  <!-- 日志 -->
+  <scroll-view class="log" scroll-y wx:if="{{logs.length>0 && !displayOverride}}">
+    <view class="log-item {{item.cls}}" wx:for="{{logs}}" wx:for-item="item" wx:key>
+      <text decode="true">{{item.msg}}</text>
+    </view>
+  </scroll-view>
+</view>

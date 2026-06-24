@@ -1,0 +1,87 @@
+.setup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px;
+  min-height: 100vh;
+}
+.title {
+  font-size: 48px;
+  font-weight: 900;
+  color: #f0a030;
+  text-shadow: 0 0 30px rgba(240,160,48,.3);
+}
+.subtitle {
+  font-size: 14px;
+  color: #9a90a8;
+  letter-spacing: .3em;
+  margin: -8px 0 24px;
+}
+.card {
+  width: 100%;
+  max-width: 340px;
+  background: #252030;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.label {
+  font-size: 13px;
+  color: #9a90a8;
+  display: block;
+  margin-bottom: 8px;
+}
+.input {
+  width: 100%;
+  padding: 10px 12px;
+  background: #2e2838;
+  border-radius: 8px;
+  color: #e8e0f0;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.btn-row {
+  display: flex;
+  gap: 10px;
+}
+.btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: 40px;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+  border: none;
+}
+.btn.primary {
+  background: linear-gradient(135deg, #f0a030, #e87830);
+  color: #1a1520;
+}
+.btn.secondary {
+  background: #2e2838;
+  color: #f0a030;
+  border: 2px solid #f0a030;
+  padding: 8px 20px;
+  flex: 0 0 auto;
+}
+.input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.divider {
+  text-align: center;
+  color: #9a90a8;
+  margin: 12px 0;
+  font-size: 12px;
+}
+.tips {
+  max-width: 340px;
+  margin-top: 12px;
+}
+.tip {
+  font-size: 12px;
+  color: #9a90a8;
+  display: block;
+  margin-bottom: 6px;
+}

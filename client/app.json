@@ -1,0 +1,15 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/room/room",
+    "pages/game/game"
+  ],
+  "window": {
+    "navigationBarTitleText": "起床！大逃杀",
+    "navigationBarBackgroundColor": "#1a1520",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#1a1520"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}
