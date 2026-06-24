@@ -2,6 +2,7 @@
 const RPS_EMOJI = { rock: '✊', scissors: '✌️', paper: '✋' };
 const RPS_NAME = { rock: '石头', scissors: '剪刀', paper: '布' };
 const MAX_HP = 3;
+const MAX_ITEMS = 5;
 
 const MAP_ORDER = [
   'shop', 'park', 'range', 'hospital', 'church',
@@ -21,4 +22,4 @@ const LOCS = {
   blackmarket:{ id: 'blackmarket',name: '黑市',   icon: '🏴' },
 };
 
-module.exports = { RPS_EMOJI, RPS_NAME, MAX_HP, MAP_ORDER, LOCS };
+module.exports = { RPS_EMOJI, RPS_NAME, MAX_HP, MAX_ITEMS, MAP_ORDER, LOCS };

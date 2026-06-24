@@ -16,6 +16,9 @@
     <button class="btn {{myReady?'cancel':'primary'}}" bindtap="toggleReady">
       {{myReady?'❌ 取消准备':'✅ 准备'}}
     </button>
+    <button class="btn secondary" bindtap="addAI" wx:if="{{isHost && players.length < 4}}">
+      🤖 加 AI 玩家
+    </button>
     <button class="btn secondary" bindtap="startGame" wx:if="{{isHost}}">
       🎮 开始游戏（{{players.length}}人）
     </button>

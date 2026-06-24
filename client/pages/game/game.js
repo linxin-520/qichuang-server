@@ -1,5 +1,5 @@
 const ws = require('../../utils/ws');
-const { RPS_EMOJI, RPS_NAME, LOCS } = require('../../utils/constants');
+const { RPS_EMOJI, RPS_NAME, LOCS, MAX_HP, MAX_ITEMS } = require('../../utils/constants');
 
 Page({
   data: {
@@ -16,6 +16,9 @@ Page({
     rpsChoices: {},
     rpsLabel: '',
     rpsMyTurn: false,
+    rpsEmoji: RPS_EMOJI,
+    rpsWinsNeeded: 1,
+    rpsWinsGot: 0,
     event: null,
     winner: null,
     logs: [],
@@ -24,8 +27,9 @@ Page({
     displayOverride: null,     // 临时覆盖显示的阶段（用于动画）
     displayTitle: '',          // 当前显示阶段的标题
     displayDesc: '',           // 当前显示阶段的描述
-    rpsType: '',               // 'order' | 'combat' | 'skill' | 'bomb'
+    rpsType: '',               // 'order' | 'combat' | 'skill' | 'bomb_self' | 'bomb_target'
     roundStartAnim: false,     // 是否正在播放回合开始动画
+    maxItems: MAX_ITEMS,
   },
 
   onLoad() {
@@ -56,7 +60,7 @@ Page({
       // 血条
       const players = state.players.map(p => ({
         ...p,
-        hpDisplay: '❤️'.repeat(p.hp) + '🖤'.repeat(Math.max(0, 3 - p.hp)),
+        hpDisplay: '❤️'.repeat(p.hp) + '🖤'.repeat(Math.max(0, MAX_HP - p.hp)),
       }));
 
       // === 检测新回合开始 ===
@@ -138,13 +142,19 @@ Page({
         displayTitle,
         displayDesc,
         rpsType,
+        // act_rps 阶段兜底：若 rps_challenge 消息丢失，仍能根据 state 判定
+        rpsMyTurn: state.phase === 'act_rps' ? state.rpsPhasePlayer === this.data.myId : this.data.rpsMyTurn,
+        rpsLabel: state.pendingRps && state.pendingRps.label ? state.pendingRps.label : this.data.rpsLabel,
       });
     });
 
     ws.on('rps_challenge', (msg) => {
       this.setData({
-        rpsLabel: msg.label,
-        rpsMyTurn: msg.myTurn,
+        rpsLabel: msg.label || '',
+        rpsMyTurn: !!msg.myTurn,
+        rpsType: msg.rpsType || this.data.rpsType,
+        rpsWinsNeeded: msg.winsNeeded || 1,
+        rpsWinsGot: msg.winsGot || 0,
       });
     });
   },

@@ -58,8 +58,17 @@ function getPublicState(G, viewerId) {
     winners: G.winners,
     winnerIdx: G.winnerIdx,
     actionsLeft: G.actionsLeft,
+    winnersActions: G.winnersActions || null,
     rpsChoices: G.rpsChoices,
-    pendingRps: G.pendingRps ? { type: G.pendingRps.type, label: G.pendingRps.label, atk: G.pendingRps.atk, def: G.pendingRps.def } : null,
+    pendingRps: G.pendingRps ? {
+      type: G.pendingRps.type,
+      label: G.pendingRps.label,
+      atk: G.pendingRps.atk,
+      def: G.pendingRps.def,
+      // 只让本人看到进度细节
+      winsNeeded: viewerId === G.pendingRps.atk || viewerId === G.pendingRps.defender ? G.pendingRps.winsNeeded : undefined,
+      winsGot:    viewerId === G.pendingRps.atk || viewerId === G.pendingRps.defender ? G.pendingRps.winsGot    : undefined,
+    } : null,
     rpsPhasePlayer: G.rpsPhasePlayer,
     currentEvent: G.currentEvent,
     blockedLoc: G.blockedLoc,
@@ -101,7 +110,7 @@ function createGame(config) {
     enableEvents: !!enableEvents,
     rpsChoices: {},
     rpsCurrent: 0, rpsRetries: 0,
-    winners: [], winnerIdx: 0, actionsLeft: 0,
+    winners: [], winnerIdx: 0, actionsLeft: 0, winnersActions: {},
     log: [],
     currentEvent: null, blockedLoc: null,
     winner: null,
@@ -145,7 +154,7 @@ function createGame(config) {
           log(`🔥 ${locs[G.blockedLoc].icon}${locs[G.blockedLoc].name} 火灾封锁！`, 'kill');
         }
         if (evt.id === 'cleanse') {
-          Object.values(locs).forEach(l => { l.trap = false; l.poisoned = false; l.beartrap = false; });
+          Object.values(locs).forEach(l => { l.trap = false; l.poisoned = false; l.beartrap = false; delete l.airdropItem; });
         }
         if (evt.id === 'airdrop') {
           const dropLoc = randItem(MAP_ORDER);
@@ -170,6 +179,17 @@ function createGame(config) {
       else G.phase = 'rps_cover';
     },
 
+    // AI 出拳（开局猜拳）
+    aiRpsPick(pid) {
+      if (G.phase !== 'rps_pick' && G.phase !== 'rps_cover') return;
+      const p = getP(pid);
+      if (!p || !p.isAI) return;
+      G.rpsChoices[pid] = randItem(RPS);
+      G.rpsCurrent++;
+      if (G.rpsCurrent >= alive().length) G.phase = 'rps_reveal';
+      else G.phase = 'rps_cover';
+    },
+
     // 结算猜拳
     resolveRps() {
       if (G.phase !== 'rps_reveal') return;
@@ -180,6 +200,9 @@ function createGame(config) {
           G.winners = shuffle(aliveIds());
           G.winnerIdx = 0;
           G.actionsLeft = 1;
+          // 每个人保存行动点
+          G.winnersActions = {};
+          G.winners.forEach(id => { G.winnersActions[id] = 1; });
           startActionPhase();
         } else {
           G.rpsChoices = {};
@@ -193,6 +216,8 @@ function createGame(config) {
       G.winners = shuffle([...result.winners]);
       G.winnerIdx = 0;
       G.actionsLeft = apw;
+      G.winnersActions = {};
+      G.winners.forEach(id => { G.winnersActions[id] = apw; });
       startActionPhase();
     },
 
@@ -200,9 +225,12 @@ function createGame(config) {
     doMove(pid, destId) {
       const p = getP(pid);
       if (!p || p.status === 'dead') return;
-      if (G.blockedLoc === destId) return;
-      p.loc = destId;
       const loc = locs[destId];
+      if (!loc) return; // 防止客户端传入非法 destId
+      if (G.blockedLoc === destId) return;
+      // 禁止进入别人家
+      if (destId.startsWith('home') && destId !== `home${pid}`) return;
+      p.loc = destId;
       log(`🚶 ${p.name} 移动到了 ${loc.icon}${loc.name}`);
 
       if (loc.trap && loc.owner !== pid) { loc.trap = false; p.status = 'stunned'; log(`⚙️ ${p.name} 触发了陷阱！`, 'kill'); }
@@ -281,22 +309,267 @@ function createGame(config) {
     },
 
     doStrangle(atkId, defId) {
+      const atk = getP(atkId);
       const def = getP(defId);
-      if (!def || def.status === 'dead') return;
+      if (!atk || !def || def.status === 'dead') return;
+      // 同地点校验
+      if (atk.loc !== def.loc) return;
       G.pendingRps = {
         type: 'combat', atk: atkId, def: defId,
         winsNeeded: 1, winsGot: 0,
         onWin: () => {
           def.hp--;
-          log(`🤏 ${getP(atkId).name} 掐住了 ${def.name}，造成1伤害！`, 'kill');
-          if (def.hp <= 0) killPlayer(defId, `被 ${getP(atkId).name} 掐死`, atkId);
+          log(`🤏 ${atk.name} 掐住了 ${def.name}，造成1伤害！`, 'kill');
+          if (def.hp <= 0) killPlayer(defId, `被 ${atk.name} 掐死`, atkId);
           afterAction();
         },
-        onLose: () => { log(`🤏 ${getP(atkId).name} 偷袭失败`); afterAction(); },
+        onLose: () => { log(`🤏 ${atk.name} 偷袭失败`); afterAction(); },
         choices: {},
       };
       G.phase = 'act_rps';
       G.rpsPhasePlayer = atkId;
+    },
+
+    // 技能/制造/治疗等需要"vs 命运"猜拳的动作
+    startSkill(pid, skillId) {
+      const p = getP(pid);
+      if (!p || p.status === 'dead') return;
+      let winsNeeded = 1, label = '', onWin = null, onLose = null;
+      switch (skillId) {
+        case 'makeBomb':
+          winsNeeded = 2; label = '💣 制作炸弹';
+          onWin = () => { addItem(pid, 'bomb'); log(`💣 ${p.name} 成功制作了炸弹！`, 'good'); };
+          onLose = () => { log(`💣 ${p.name} 制作炸弹失败...`); };
+          break;
+        case 'makePoison':
+          winsNeeded = 1; label = '🧪 制作毒药';
+          onWin = () => { addItem(pid, 'poison'); log(`🧪 ${p.name} 成功制作了毒药！`, 'good'); };
+          onLose = () => { log(`🧪 ${p.name} 制作毒药失败...`); };
+          break;
+        case 'enhanceDagger':
+          winsNeeded = 1; label = '⚔️ 强化武器';
+          onWin = () => {
+            if (hasItem(pid, 'dagger')) removeItem(pid, 'dagger');
+            addItem(pid, 'enhanced');
+            log(`⚔️ ${p.name} 成功强化了匕首！`, 'good');
+          };
+          onLose = () => { log(`⚔️ ${p.name} 强化失败...`); };
+          break;
+        case 'makePoisonDagger':
+          winsNeeded = 1; label = '🗡️ 淬毒匕首';
+          onWin = () => {
+            removeItem(pid, 'dagger'); removeItem(pid, 'poison');
+            addItem(pid, 'poisoned_dagger');
+            log(`🗡️ ${p.name} 成功制作了淬毒匕首！`, 'good');
+          };
+          onLose = () => { log(`🗡️ ${p.name} 淬毒失败，材料报废...`); };
+          break;
+        case 'makeBurstGun':
+          winsNeeded = 1; label = '🔫 速射改装';
+          onWin = () => {
+            removeItem(pid, 'gun'); removeItem(pid, 'stimulant');
+            addItem(pid, 'burst_gun');
+            log(`🔫 ${p.name} 成功改装了速射手枪！`, 'good');
+          };
+          onLose = () => { log(`🔫 ${p.name} 改装失败...`); };
+          break;
+        case 'train':
+          winsNeeded = 1; label = '💪 锻炼';
+          onWin = () => { p.trained = true; log(`💪 ${p.name} 在公园刻苦锻炼！`, 'good'); };
+          onLose = () => { log(`💪 ${p.name} 锻炼中断...`); };
+          break;
+        case 'searchPark':
+          winsNeeded = 1; label = '🔍 搜索特殊物资';
+          onWin = () => {
+            const finds = ['stimulant', 'beartrap', 'bandage', 'binoculars'];
+            const found = randItem(finds);
+            addItem(pid, found);
+            log(`🔍 ${p.name} 搜索到了 ${ITEMS[found].icon}${ITEMS[found].name}！`, 'good');
+          };
+          onLose = () => { log(`🔍 ${p.name} 什么也没找到...`); };
+          break;
+        case 'practiceRange':
+          winsNeeded = 1; label = '🎯 瞄准射击';
+          onWin = () => { p.aimed = true; log(`🎯 ${p.name} 练好了枪法！下次远程必中`, 'good'); };
+          onLose = () => { log(`🎯 ${p.name} 脱靶了...`); };
+          break;
+        case 'exploreRuins':
+          winsNeeded = 2; label = '🏚️ 探索废墟';
+          onWin = () => {
+            const finds = ['taser', 'sniper', 'bomb', 'enhanced'];
+            const found = randItem(finds);
+            if (found === 'enhanced' && hasItem(pid, 'dagger')) removeItem(pid, 'dagger');
+            addItem(pid, found);
+            log(`🏚️ ${p.name} 在废墟发现了 ${ITEMS[found].icon}${ITEMS[found].name}！`, 'good');
+          };
+          onLose = () => {
+            p.hp--;
+            log(`🏚️ ${p.name} 探索失败被碎石砸伤！`, 'kill');
+            if (p.hp <= 0) killPlayer(pid, '被废墟碎石砸死');
+          };
+          break;
+        case 'gamble':
+          winsNeeded = 1; label = '🎰 赌博';
+          onWin = () => { p.money += 3; log(`🎰 ${p.name} 赢了3金币！💰${p.money}`, 'good'); };
+          onLose = () => { p.money = Math.max(0, p.money - 2); log(`🎰 ${p.name} 输光了...💰${p.money}`, 'kill'); };
+          break;
+        default:
+          log(`⚠️ ${p.name} 尝试未知技能 ${skillId}`);
+          afterAction();
+          return;
+      }
+      G.pendingRps = {
+        type: 'skill', atk: pid, defender: pid,  // 自己 vs 命运
+        winsNeeded, winsGot: 0,
+        onWin: () => { onWin(); afterAction(); },
+        onLose: () => { onLose(); afterAction(); },
+        choices: {},
+        label,
+      };
+      G.phase = 'act_rps';
+      G.rpsPhasePlayer = pid;
+    },
+
+    // 位置动作（不需猜拳）
+    doLocAction(pid, actionId, payload) {
+      const p = getP(pid);
+      if (!p || p.status === 'dead') return;
+      const loc = locs[p.loc];
+      if (!loc) return;
+      switch (actionId) {
+        case 'rest':
+          if (loc.id.startsWith('home')) {
+            p.hp = Math.min(MAX_HP, p.hp + 1);
+            log(`😴 ${p.name} 在家休息，恢复至${p.hp}HP`, 'good');
+          }
+          afterAction();
+          break;
+        case 'setHomeTrap':
+          if (loc.id.startsWith('home') && loc.owner === pid && !loc.trap) {
+            loc.trap = true;
+            log(`⚙️ ${p.name} 在家中设下了陷阱`);
+          }
+          afterAction();
+          break;
+        case 'setWarehouseTrap':
+          if (loc.id === 'warehouse' && !loc.trap) {
+            loc.trap = true;
+            log(`🪤 ${p.name} 在仓库设下了陷阱`);
+          }
+          afterAction();
+          break;
+        case 'searchWarehouse': {
+          const finds = ['dagger', 'bandage', 'medkit', 'vest'];
+          const found = randItem(finds);
+          addItem(pid, found);
+          log(`📦 ${p.name} 翻出了 ${ITEMS[found].icon}${ITEMS[found].name}！`, 'good');
+          afterAction();
+          break;
+        }
+        case 'buyShopItem': {
+          const si = SHOP_ITEMS.find(s => s.id === payload.itemId);
+          if (!si || loc.id !== 'shop') { afterAction(); return; }
+          if (p.money < si.cost) { log(`💰 ${p.name} 钱不够`); afterAction(); return; }
+          const owned = si.id === 'dagger' ? (hasItem(pid, 'dagger') || hasItem(pid, 'enhanced')) : hasItem(pid, si.id);
+          if (owned) { log(`⚠️ ${p.name} 已拥有该物品`); afterAction(); return; }
+          p.money -= si.cost;
+          addItem(pid, si.id);
+          log(`🏪 ${p.name} 购买了 ${ITEMS[si.id].icon}${ITEMS[si.id].name}（余额💰${p.money}）`, 'good');
+          afterAction();
+          break;
+        }
+        case 'pickAirdrop': {
+          if (loc.airdropItem) {
+            const dropId = loc.airdropItem;
+            addItem(pid, dropId);
+            log(`🚁 ${p.name} 捡到了空投中的 ${ITEMS[dropId].icon}${ITEMS[dropId].name}！`, 'good');
+            delete loc.airdropItem;
+          }
+          afterAction();
+          break;
+        }
+        case 'hospitalHeal':
+          if (loc.id === 'hospital') {
+            p.hp = MAX_HP;
+            log(`💉 ${p.name} 在医院接受了全面治疗`, 'good');
+          }
+          afterAction();
+          break;
+        case 'hospitalCure':
+          if (loc.id === 'hospital' && p.poisoned) {
+            p.poisoned = false;
+            log(`🧬 ${p.name} 成功解毒！`, 'good');
+          }
+          afterAction();
+          break;
+        case 'churchBless':
+          if (loc.id === 'church' && !p.protected) {
+            p.protected = true;
+            log(`⛪ ${p.name} 在教堂祈祷获得神圣庇护`, 'good');
+          }
+          afterAction();
+          break;
+        case 'churchConfess':
+          if (loc.id === 'church' && (p.poisoned || (p.kills || 0) >= 2)) {
+            p.poisoned = false;
+            p.kills = 0;
+            log(`⛪ ${p.name} 虔诚忏悔，洗清罪孽！`, 'good');
+          }
+          afterAction();
+          break;
+        case 'rangeAmmo':
+          if (loc.id === 'range' && hasItem(pid, 'gun')) {
+            const g = p.items.find(it => it.id === 'gun');
+            if (g) { g.ammo = (g.ammo || 0) + 1; log(`🔫 ${p.name} 领取1发手枪子弹（剩余${g.ammo}发）`, 'good'); }
+          }
+          afterAction();
+          break;
+        case 'barIntel':
+          if (loc.id === 'bar' && p.hp >= 2) {
+            p.hp--;
+            const enemies = alive().filter(x => x.id !== pid);
+            if (enemies.length > 0) {
+              const target = enemies[Math.floor(Math.random() * enemies.length)];
+              const tLoc = locs[target.loc];
+              log(`🍺 ${p.name} 买到了情报：${target.name} 在 ${tLoc.icon}${tLoc.name}`, 'good');
+            }
+          }
+          afterAction();
+          break;
+        case 'buyBlackMarket': {
+          if (loc.id !== 'blackmarket') { afterAction(); return; }
+          const bm = payload && payload.itemId;
+          const cost = G.currentEvent && G.currentEvent.id === 'discount' ? 0 : 1;
+          const needDagger = bm === 'enhanced' && !hasItem(pid, 'dagger');
+          if (p.hp <= cost || needDagger) { log(`🏴 ${p.name} 买不起`); afterAction(); return; }
+          if (cost > 0) p.hp -= cost;
+          if (bm === 'enhanced' && hasItem(pid, 'dagger')) removeItem(pid, 'dagger');
+          addItem(pid, bm);
+          log(`🏴 ${p.name} 用血换到了 ${ITEMS[bm].icon}${ITEMS[bm].name}`, 'good');
+          afterAction();
+          break;
+        }
+        case 'hide':
+          p.hidden = true;
+          log(`👻 ${p.name} 蹲伏隐藏`, 'good');
+          afterAction();
+          break;
+        case 'unhide':
+          p.hidden = false;
+          log(`🦅 ${p.name} 解除了隐藏`);
+          afterAction();
+          break;
+        case 'wakeUp':
+          if (p.status === 'sleeping') { p.status = 'awake'; log(`🛏️ ${p.name} 起床了`); }
+          afterAction();
+          break;
+        case 'recoverStun':
+          if (p.status === 'stunned') { p.status = 'awake'; log(`💫 ${p.name} 清醒了过来`); }
+          afterAction();
+          break;
+        default:
+          afterAction();
+      }
     },
 
     useItem(pid, itemId) {
@@ -304,24 +577,71 @@ function createGame(config) {
       if (!p || p.status === 'dead') return;
       const item = p.items.find(it => it.id === itemId);
       if (!item) return;
-      if (itemId === 'medkit') {
-        removeItem(pid, 'medkit');
-        p.hp = Math.min(MAX_HP, p.hp + 2);
-        log(`💊 ${p.name} 使用急救包，恢复至${p.hp}HP`, 'good');
-        afterAction();
-      } else if (itemId === 'bandage') {
-        removeItem(pid, 'bandage');
-        p.hp = Math.min(MAX_HP, p.hp + 1);
-        log(`🩹 ${p.name} 使用绷带，恢复至${p.hp}HP`, 'good');
-        afterAction();
-      } else {
-        log(`⚠️ ${p.name} 尝试使用未知道具`);
-        afterAction();
+      switch (itemId) {
+        case 'medkit':
+          removeItem(pid, 'medkit');
+          p.hp = Math.min(MAX_HP, p.hp + 2);
+          log(`💊 ${p.name} 使用急救包，恢复至${p.hp}HP`, 'good');
+          afterAction();
+          break;
+        case 'bandage':
+          removeItem(pid, 'bandage');
+          p.hp = Math.min(MAX_HP, p.hp + 1);
+          log(`🩹 ${p.name} 使用绷带，恢复至${p.hp}HP`, 'good');
+          afterAction();
+          break;
+        case 'stimulant':
+          removeItem(pid, 'stimulant');
+          G.actionsLeft += 2;
+          log(`💉 ${p.name} 注射兴奋剂！行动力暴增！`, 'good');
+          afterAction();
+          break;
+        case 'poison': {
+          removeItem(pid, 'poison');
+          const loc = locs[p.loc];
+          if (loc) loc.poisoned = true;
+          log(`🧪 ${p.name} 在当前位置投放了毒药！`);
+          afterAction();
+          break;
+        }
+        case 'beartrap': {
+          removeItem(pid, 'beartrap');
+          const loc = locs[p.loc];
+          if (loc) loc.beartrap = true;
+          log(`🪤 ${p.name} 在当前位置放置了捕兽夹！`);
+          afterAction();
+          break;
+        }
+        case 'binoculars': {
+          removeItem(pid, 'binoculars');
+          const enemies = alive().filter(x => x.id !== pid);
+          if (enemies.length > 0) {
+            const target = enemies[Math.floor(Math.random() * enemies.length)];
+            const tLoc = locs[target.loc];
+            log(`🔭 ${p.name} 用望远镜看到了 ${target.name} 在 ${tLoc.icon}${tLoc.name}`, 'good');
+          } else {
+            log(`🔭 ${p.name} 用望远镜观察四周，什么也没看到...`);
+          }
+          afterAction();
+          break;
+        }
+        case 'talisman':
+          if (p.protected) { log(`📿 ${p.name} 已有庇护`); afterAction(); return; }
+          removeItem(pid, 'talisman');
+          p.protected = true;
+          log(`📿 ${p.name} 佩戴了护身符！`, 'good');
+          afterAction();
+          break;
+        default:
+          log(`⚠️ ${p.name} 尝试使用未知道具 (${itemId})`);
+          afterAction();
       }
     },
 
     doSkip(pid) {
-      log(`⏭️ ${getP(pid).name} 跳过`);
+      const p = getP(pid);
+      if (!p) return;
+      log(`⏭️ ${p.name} 跳过`);
       afterAction();
     },
 
@@ -329,14 +649,132 @@ function createGame(config) {
     aiTurn(pid) {
       const p = getP(pid);
       if (!p || !p.isAI || p.status === 'dead') return;
-      // AI逻辑简化——随机选一个可行动作
-      const actions = getAvailableActions(pid);
-      if (actions.length > 0) {
-        const action = randItem(actions);
-        executeAction(pid, action);
-      } else {
-        afterAction();
+
+      // 强制状态：睡眠/眩晕
+      if (p.status === 'sleeping') { api.doLocAction(pid, 'wakeUp'); return; }
+      if (p.status === 'stunned')  { api.doLocAction(pid, 'recoverStun'); return; }
+
+      const loc = locs[p.loc];
+      if (!loc) { afterAction(); return; }
+
+      const others = alive().filter(x => x.id !== pid && x.loc === p.loc);
+      const diff = p.aiDiff || 'normal';
+      const rng = Math.random();
+
+      // ===== 紧急处理 =====
+      if (p.hp <= 1) {
+        if (hasItem(pid, 'medkit')) { api.useItem(pid, 'medkit'); return; }
+        if (hasItem(pid, 'bandage')) { api.useItem(pid, 'bandage'); return; }
+        if (loc.id === 'hospital') { api.doLocAction(pid, 'hospitalHeal'); return; }
+        const hosp = 'hospital';
+        if (hosp && hosp !== p.loc && G.blockedLoc !== hosp) { api.doMove(pid, hosp); return; }
       }
+      if (p.poisoned && loc.id === 'hospital') { api.doLocAction(pid, 'hospitalCure'); return; }
+
+      // ===== 战斗：同地点有人 =====
+      if (others.length > 0) {
+        // 优先掐睡着的
+        const sleeper = others.find(t => t.status === 'sleeping');
+        if (sleeper && rng > 0.2) { api.doStrangle(pid, sleeper.id); return; }
+        // 用 best weapon 攻击
+        const target = [...others].sort((a, b) => a.hp - b.hp)[0];
+        if (hasItem(pid, 'enhanced')) { api.doWeaponAttack(pid, target.id, 'enhanced'); return; }
+        if (hasItem(pid, 'poisoned_dagger')) { api.doWeaponAttack(pid, target.id, 'poisoned_dagger'); return; }
+        if (hasItem(pid, 'dagger')) { api.doWeaponAttack(pid, target.id, 'dagger'); return; }
+        if (hasItem(pid, 'bomb') && others.length >= 2) { api.doBomb(pid); return; }
+        if (hasItem(pid, 'bomb') && target.hp >= 2) { api.doBomb(pid); return; }
+        // 没用刀就徒手击晕
+        api.doPunch(pid, target.id); return;
+      }
+
+      // ===== 远程攻击（暴雨时禁用）=====
+      const canRanged = !(G.currentEvent && G.currentEvent.id === 'rain');
+      if (canRanged) {
+        if (hasItem(pid, 'sniper') && getAmmo(pid, 'sniper') > 0) {
+          const far = alive().filter(x => x.id !== pid && x.loc !== p.loc).sort((a, b) => a.hp - b.hp);
+          if (far.length > 0 && far[0].hp >= 2) { api.doWeaponAttack(pid, far[0].id, 'sniper'); return; }
+        }
+        if (hasItem(pid, 'taser') && getAmmo(pid, 'taser') > 0) {
+          const adj = alive().filter(x => x.id !== pid && x.loc !== p.loc && isAdjacent(p.loc, x.loc) && x.status === 'awake');
+          if (adj.length > 0) { api.doWeaponAttack(pid, adj[0].id, 'taser'); return; }
+        }
+      }
+
+      // ===== 当前位置动作 =====
+      if (loc.id.startsWith('home')) {
+        if (p.hp < MAX_HP) { api.doLocAction(pid, 'rest'); return; }
+        if (loc.owner === pid && !loc.trap) { api.doLocAction(pid, 'setHomeTrap'); return; }
+        // 离开家去办事
+        const dest = pickAIDestination(pid);
+        if (dest) { api.doMove(pid, dest); return; }
+        api.doSkip(pid); return;
+      }
+
+      if (loc.id === 'shop') {
+        if (!hasItem(pid, 'dagger') && !hasItem(pid, 'enhanced') && p.money >= 3) {
+          api.doLocAction(pid, 'buyShopItem', { itemId: 'dagger' }); return;
+        }
+        if (!hasItem(pid, 'gun') && p.money >= 5) {
+          api.doLocAction(pid, 'buyShopItem', { itemId: 'gun' }); return;
+        }
+        if (!hasItem(pid, 'vest') && p.money >= 4) {
+          api.doLocAction(pid, 'buyShopItem', { itemId: 'vest' }); return;
+        }
+        if (!hasItem(pid, 'medkit') && p.money >= 3) {
+          api.doLocAction(pid, 'buyShopItem', { itemId: 'medkit' }); return;
+        }
+      }
+
+      if (loc.id === 'hospital') {
+        if (p.hp < MAX_HP) { api.doLocAction(pid, 'hospitalHeal'); return; }
+        if (p.poisoned) { api.doLocAction(pid, 'hospitalCure'); return; }
+      }
+
+      if (loc.id === 'church') {
+        if (!p.protected && rng > 0.4) { api.doLocAction(pid, 'churchBless'); return; }
+        if (p.poisoned || (p.kills || 0) >= 2) { api.doLocAction(pid, 'churchConfess'); return; }
+      }
+
+      if (loc.id === 'range') {
+        if (!p.aimed) { api.startSkill(pid, 'practiceRange'); return; }
+        if (hasItem(pid, 'gun')) { api.doLocAction(pid, 'rangeAmmo'); return; }
+      }
+
+      if (loc.id === 'park') {
+        if (!p.trained) { api.startSkill(pid, 'train'); return; }
+        if (rng > 0.5) { api.startSkill(pid, 'searchPark'); return; }
+      }
+
+      if (loc.id === 'lab') {
+        if (!hasItem(pid, 'bomb') && rng > 0.3) { api.startSkill(pid, 'makeBomb'); return; }
+        if (!hasItem(pid, 'poison')) { api.startSkill(pid, 'makePoison'); return; }
+      }
+
+      if (loc.id === 'warehouse') {
+        if (!loc.trap && rng > 0.5) { api.doLocAction(pid, 'setWarehouseTrap'); return; }
+        api.doLocAction(pid, 'searchWarehouse'); return;
+      }
+
+      if (loc.id === 'bar') {
+        if (p.hp >= 2 && rng > 0.5) { api.doLocAction(pid, 'barIntel'); return; }
+        if (p.money >= 2 && rng > 0.5) { api.startSkill(pid, 'gamble'); return; }
+      }
+
+      if (loc.id === 'blackmarket') {
+        if (!hasItem(pid, 'bomb') && rng > 0.4) { api.doLocAction(pid, 'buyBlackMarket', { itemId: 'bomb' }); return; }
+        if (!hasItem(pid, 'taser') && rng > 0.4) { api.doLocAction(pid, 'buyBlackMarket', { itemId: 'taser' }); return; }
+      }
+
+      if (loc.id === 'ruins' && p.hp >= 2 && rng > 0.3) { api.startSkill(pid, 'exploreRuins'); return; }
+
+      // 空投拾取
+      if (loc.airdropItem) { api.doLocAction(pid, 'pickAirdrop'); return; }
+
+      // 移动决策
+      const dest = pickAIDestination(pid);
+      if (dest && dest !== p.loc) { api.doMove(pid, dest); return; }
+
+      api.doSkip(pid);
     },
 
     // RPS猜拳提交（战斗/技能）
@@ -375,6 +813,24 @@ function createGame(config) {
         }
         rps.targetIdx++;
         nextBombTarget();
+      }
+    },
+
+    // 玩家跳过当前 RPS（炸弹求生等可选跳过场景备用，目前未启用）
+    rpsSkip(pid) {
+      if (G.phase !== 'act_rps' || !G.pendingRps) return;
+      const rps = G.pendingRps;
+      if (rps.type === 'combat' && pid === rps.def) {
+        rps.choices[rps.def] = 'skip';
+        // 视为挑战者胜利（被攻击方弃权）
+        if (rps.choices[rps.atk]) {
+          rps.winsGot = rps.winsNeeded;
+          rps.onWin && rps.onWin();
+          G.phase = 'act_turn';
+          G.pendingRps = null;
+        } else {
+          G.rpsPhasePlayer = rps.atk;
+        }
       }
     },
   };
@@ -516,8 +972,10 @@ function createGame(config) {
       if (G.winnerIdx < G.winners.length) {
         const nextP = getP(G.winners[G.winnerIdx]);
         if (nextP && nextP.status !== 'dead') {
-          const result = resolveMultiRPS(G.rpsChoices);
-          G.actionsLeft = result ? result.actionsPerWinner : 1;
+          // 直接读保存的每人行动点数；缺失时回落 1
+          G.actionsLeft = G.winnersActions && G.winnersActions[nextP.id]
+            ? G.winnersActions[nextP.id]
+            : 1;
         }
       }
       startActionPhase();
@@ -538,7 +996,10 @@ function createGame(config) {
     const actions = [{ type: 'skip' }];
     // Movement
     Object.keys(locs).forEach(lid => {
-      if (lid !== p.loc && lid !== G.blockedLoc) actions.push({ type: 'move', dest: lid });
+      if (lid === p.loc || lid === G.blockedLoc) return;
+      // 不能进别人家
+      if (lid.startsWith('home') && lid !== `home${pid}`) return;
+      actions.push({ type: 'move', dest: lid });
     });
     // Basic attacks
     playersAt(p.loc).filter(x => x.id !== pid).forEach(t => {
@@ -557,6 +1018,26 @@ function createGame(config) {
       case 'weapon': api.doWeaponAttack(pid, action.target, action.weapon); break;
       case 'skip': afterAction(); break;
     }
+  }
+
+  // AI 决策辅助：挑下一个要去的地方
+  function pickAIDestination(pid) {
+    const p = getP(pid);
+    if (!p) return null;
+    const candidates = Object.keys(locs).filter(l => l !== p.loc && l !== G.blockedLoc && !(l.startsWith('home') && l !== `home${pid}`));
+    if (candidates.length === 0) return null;
+    // 优先级：医院 > 商店 > 教堂 > 公园 > 仓库 > 实验室 > 酒吧 > 黑市 > 废墟
+    const order = ['hospital', 'shop', 'church', 'park', 'range', 'warehouse', 'lab', 'bar', 'blackmarket', 'ruins'];
+    for (const id of order) {
+      if (candidates.includes(id)) return id;
+    }
+    // 没人味就朝最近的活人走
+    const enemies = alive().filter(x => x.id !== pid);
+    if (enemies.length > 0) {
+      const target = enemies.sort((a, b) => a.hp - b.hp)[0];
+      return target.loc;
+    }
+    return candidates[0];
   }
 
   return api;

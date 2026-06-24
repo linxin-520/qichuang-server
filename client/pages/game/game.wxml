@@ -20,7 +20,7 @@
 
   <!-- 自己信息 -->
   <view class="my-info">
-    <text class="my-money">💰{{myMoney}} | 背包{{myItems.length}}/5</text>
+    <text class="my-money">💰{{myMoney}} | 背包{{myItems.length}}/{{maxItems}}</text>
     <text class="my-actions" wx:if="{{actionsLeft>0}}">🔵剩余{{actionsLeft}}行动点</text>
   </view>
 
@@ -66,7 +66,7 @@
       <view class="rps-type-badge order">🏁 行动顺序</view>
       <view class="rps-result" wx:for="{{players}}" wx:key="id">
         <text style="color:{{item.color}}">{{item.name}}</text>
-        <text>{{rpsChoices[item.id]}}</text>
+        <text>{{rpsEmoji[rpsChoices[item.id]] || '?'}}</text>
       </view>
       <button class="btn primary" bindtap="confirmRps">确认结果</button>
     </view>
@@ -103,8 +103,9 @@
 
     <!-- 战斗猜拳 / 炸弹 / 技能 -->
     <view class="screen" wx:elif="{{phase=='act_rps'}}">
-      <view class="rps-type-badge combat">⚔️ {{rpsType=='bomb_self'?'炸弹反噬':rpsType=='bomb_target'?'炸弹求生':'战斗对决'}}</view>
+      <view class="rps-type-badge combat">⚔️ {{rpsType=='bomb_self'?'炸弹反噬':rpsType=='bomb_target'?'炸弹求生':rpsType=='skill'?'技能挑战':'战斗对决'}}</view>
       <text class="rps-combat-label">{{rpsLabel}}</text>
+      <text class="rps-progress" wx:if="{{rpsWinsNeeded>1}}">进度 {{rpsWinsGot}}/{{rpsWinsNeeded}}</text>
       <block wx:if="{{rpsMyTurn}}">
         <view class="rps-choices">
           <view class="rps-btn" bindtap="rpsSubmit" data-hand="rock">✊<text>石头</text></view>
