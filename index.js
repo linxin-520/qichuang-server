@@ -214,6 +214,7 @@ wss.on('connection', (ws) => {
       // ===== 游戏操作 =====
       case 'rps_pick': {
         const room = rooms.get(currentRoomId);
+        console.log('[rps_pick]', 'currentPlayerId=' + currentPlayerId, 'hand=' + msg.hand, 'roomOk=' + !!room, 'gameOk=' + !!(room && room.game), 'phase=' + (room && room.game && room.game.getPublicState && room.game.getPublicState().phase));
         if (room && room.game && ['rock','scissors','paper'].includes(msg.hand)) {
           room.game.playerRpsPick(currentPlayerId, msg.hand);
           broadcastGameState(currentRoomId);
