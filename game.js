@@ -588,7 +588,8 @@ function createGame(config) {
           if (p.status === 'sleeping') {
             p.status = 'awake';
             log(`🛏️ ${p.name} 起床了`, 'good');
-            // 起床不消耗行动点（让玩家醒来后还能动一下）
+            // 玩家手动点起床不扣行动点（保留原修的玩家体验）
+            // AI 自动起床也不扣 — AI 行动链由 aiTurn 控制，不靠 afterAction
             return;
           }
           afterAction();
@@ -597,7 +598,6 @@ function createGame(config) {
           if (p.status === 'stunned') {
             p.status = 'awake';
             log(`💫 ${p.name} 清醒了过来`, 'good');
-            // 清醒不消耗行动点
             return;
           }
           afterAction();
@@ -685,9 +685,9 @@ function createGame(config) {
       const p = getP(pid);
       if (!p || !p.isAI || p.status === 'dead') return;
 
-      // 强制状态：睡眠/眩晕
-      if (p.status === 'sleeping') { api.doLocAction(pid, 'wakeUp'); return; }
-      if (p.status === 'stunned')  { api.doLocAction(pid, 'recoverStun'); return; }
+      // 强制状态：睡眠/眩晕 — 起床/清醒本身算 1 个行动
+      if (p.status === 'sleeping') { api.doLocAction(pid, 'wakeUp'); afterAction(); return; }
+      if (p.status === 'stunned')  { api.doLocAction(pid, 'recoverStun'); afterAction(); return; }
 
       const loc = locs[p.loc];
       if (!loc) { afterAction(); return; }
