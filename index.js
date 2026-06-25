@@ -61,7 +61,8 @@ function broadcastGameState(roomId) {
   // 自动推进到下一轮：round_end → startRound
   // 让 client 看到 round_end 一次（用于显示回合结束提示），然后立即进入下一轮
   const cur = room.game.getState(0);
-  if (cur.phase === 'round_end' && !room.game._internal().finished) {
+  const needReBroadcast = cur.phase === 'round_end' && !room.game._internal().finished;
+  if (needReBroadcast) {
     room.game.startRound();
     triggerAITurns(room);
   }
@@ -74,6 +75,10 @@ function broadcastGameState(roomId) {
       pushRpsChallenge(room, p.id, state);
     }
   });
+  // 推进到下一轮后，1.5s 后 round_intro → rps_cover，再 broadcast 一次让 client 看到猜拳界面
+  if (needReBroadcast) {
+    setTimeout(() => { if (room.game) broadcastGameState(roomId); }, 1600);
+  }
 }
 
 function pushRpsChallenge(room, viewerId, state) {
@@ -115,6 +120,9 @@ function startGame(room) {
 function triggerAITurns(room) {
   if (!room || !room.game) return;
   const G = room.game;
+  room._aiDirty = true;  // 标记需要 AI 处理（防 tryAI 跑完后丢失 trigger）
+  if (room._aiRunning) return;  // 已有 tryAI 在跑
+  room._aiRunning = true;
   let pending = false;
   const tryAI = () => {
     const int0 = G._internal();
@@ -124,6 +132,7 @@ function triggerAITurns(room) {
     const state = G.getState(0);
     if (pending) return;
     pending = true;
+    room._aiDirty = false;
     try {
       // 阶段 1：开局猜拳 — 让还没出拳的 AI 自动出
       if (state.phase === 'rps_cover' || state.phase === 'rps_pick') {
@@ -170,6 +179,12 @@ function triggerAITurns(room) {
       }
     } finally {
       pending = false;
+      // 若期间又收到 trigger，循环再跑一轮
+      if (room._aiDirty && room.game) {
+        setTimeout(tryAI, 50);
+      } else {
+        room._aiRunning = false;
+      }
     }
   };
   setTimeout(tryAI, 300);
@@ -338,11 +353,15 @@ wss.on('connection', (ws) => {
             case 'loc':        room.game.doLocAction(currentPlayerId, target, payload); break;
             case 'skip':       room.game.doSkip(currentPlayerId); break;
             case 'rpsSubmit':  room.game.rpsSubmit(currentPlayerId, hand); break;
-            case 'nextRound':
-              room.game.startRound();
-              // 1.5s 后 round_intro → rps_cover，再 broadcast 一次
-              setTimeout(() => { if (room.game) broadcastGameState(currentRoomId); }, 1600);
+            case 'nextRound': {
+              const curPhase = room.game.getState(0).phase;
+              // 只有 phase 还是 round_end 时才推进（避免和 broadcastGameState 自动推进重复）
+              if (curPhase === 'round_end' && !room.game._internal().finished) {
+                room.game.startRound();
+                setTimeout(() => { if (room.game) broadcastGameState(currentRoomId); }, 1600);
+              }
               break;
+            }
             default:
               safeSend(ws, JSON.stringify({ type: 'error', msg: '未知动作: ' + action }));
               return;
