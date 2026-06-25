@@ -307,6 +307,7 @@ wss.on('connection', (ws) => {
         if (room && room.game && ['rock','scissors','paper'].includes(msg.hand)) {
           room.game.playerRpsPick(currentPlayerId, msg.hand);
           broadcastGameState(currentRoomId);
+          triggerAITurns(room);
         }
         break;
       }
