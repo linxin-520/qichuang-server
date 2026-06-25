@@ -58,6 +58,13 @@ function broadcastToRoom(roomId, msg, excludeWs = null) {
 function broadcastGameState(roomId) {
   const room = rooms.get(roomId);
   if (!room || !room.game) return;
+  // 自动推进到下一轮：round_end → startRound
+  // 让 client 看到 round_end 一次（用于显示回合结束提示），然后立即进入下一轮
+  const cur = room.game.getState(0);
+  if (cur.phase === 'round_end' && !room.game._internal().finished) {
+    room.game.startRound();
+    triggerAITurns(room);
+  }
   room.players.forEach(p => {
     if (p.ws && p.ws.readyState === 1) {
       const state = room.game.getState(p.id);
