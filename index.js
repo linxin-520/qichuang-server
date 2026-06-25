@@ -95,6 +95,82 @@ function pushRpsChallenge(room, viewerId, state) {
 }
 
 // ===== WebSocket 连接处理 =====
+function startGame(room) {
+  if (room.state === 'playing') return;
+  room.state = 'playing';
+  const names = room.players.map(p => p.name);
+  const ais = room.players.map(p => p.isAI);
+  const diffs = room.players.map(p => p.diff || 'normal');
+  room.game = createGame({ playerNames: names, playerAIs: ais, playerDiff: diffs, enableEvents: true });
+  room.game.startRound();
+  broadcastToRoom(room.id, { type: 'game_started' });
+  broadcastGameState(room.id);
+  triggerAITurns(room);
+}
+
+function triggerAITurns(room) {
+  if (!room || !room.game) return;
+  const G = room.game;
+  let pending = false;
+  const tryAI = () => {
+    const int0 = G._internal();
+    // 找当前行动者
+    const winnerId = int0.winners && int0.winners[int0.winnerIdx];
+    const cur = winnerId !== undefined ? room.players.find(p => p.id === winnerId) : null;
+    const state = G.getState(0);
+    if (pending) return;
+    pending = true;
+    try {
+      // 阶段 1：开局猜拳 — 让还没出拳的 AI 自动出
+      if (state.phase === 'rps_cover' || state.phase === 'rps_pick') {
+        const aliveNow = G.getState(0).players.filter(p => p.status !== 'dead');
+        const aiToPick = aliveNow.filter(p => p.isAI && !int0.rpsChoices[p.id]);
+        if (aiToPick.length > 0) {
+          aiToPick.forEach(p => { G.aiRpsPick(p.id); });
+          broadcastGameState(room.id);
+          // 若仍有 AI 未出拳，继续
+          const st2 = G.getState(0);
+          const int2 = G._internal();
+          if ((st2.phase === 'rps_cover' || st2.phase === 'rps_pick')) {
+            const remain = st2.players.filter(p => p.status !== 'dead' && p.isAI && !int2.rpsChoices[p.id]);
+            if (remain.length > 0) setTimeout(tryAI, 100);
+          }
+        }
+        return;
+      }
+
+      if (!cur || !cur.isAI) return;
+      if (state.phase !== 'act_turn') return;
+
+      room.game.aiTurn(cur.id);
+      broadcastGameState(room.id);
+      // 若仍是 AI 阶段，立即递归（避免 600ms 延迟）
+      const st2 = G.getState(0);
+      const int2 = G._internal();
+      if (st2.phase === 'act_turn') {
+        const nextWinner = int2.winners[int2.winnerIdx];
+        const nextP = room.players.find(p => p.id === nextWinner);
+        if (nextP && nextP.isAI) setTimeout(tryAI, 50);
+      } else if (st2.phase === 'act_rps') {
+        // rps 阶段也需要 AI 出拳
+        const rpsPlayer = st2.rpsPhasePlayer;
+        const rpsP = room.players.find(p => p.id === rpsPlayer);
+        if (rpsP && rpsP.isAI) {
+          const hand = ['rock','scissors','paper'][Math.floor(Math.random()*3)];
+          setTimeout(() => {
+            room.game.rpsSubmit(rpsPlayer, hand);
+            broadcastGameState(room.id);
+            setTimeout(tryAI, 50);
+          }, 300);
+        }
+      }
+    } finally {
+      pending = false;
+    }
+  };
+  setTimeout(tryAI, 300);
+}
+
 wss.on('connection', (ws) => {
   let currentRoomId = null;
   let currentPlayerId = null;
@@ -299,82 +375,7 @@ wss.on('connection', (ws) => {
         safeSend(ws, JSON.stringify({ type: 'error', msg: '未知消息类型' }));
     }
   }
-
-  function startGame(room) {
-    if (room.state === 'playing') return;
-    room.state = 'playing';
-    const names = room.players.map(p => p.name);
-    const ais = room.players.map(p => p.isAI);
-    const diffs = room.players.map(p => p.diff || 'normal');
-    room.game = createGame({ playerNames: names, playerAIs: ais, playerDiff: diffs, enableEvents: true });
-    room.game.startRound();
-    broadcastToRoom(room.id, { type: 'game_started' });
-    broadcastGameState(room.id);
-    triggerAITurns(room);
-  }
-
-  function triggerAITurns(room) {
-    if (!room || !room.game) return;
-    const G = room.game;
-    let pending = false;
-    const tryAI = () => {
-      const int0 = G._internal();
-      // 找当前行动者
-      const winnerId = int0.winners && int0.winners[int0.winnerIdx];
-      const cur = winnerId !== undefined ? room.players.find(p => p.id === winnerId) : null;
-      const state = G.getState(0);
-      if (pending) return;
-      pending = true;
-      try {
-        // 阶段 1：开局猜拳 — 让还没出拳的 AI 自动出
-        if (state.phase === 'rps_cover' || state.phase === 'rps_pick') {
-          const aliveNow = G.getState(0).players.filter(p => p.status !== 'dead');
-          const aiToPick = aliveNow.filter(p => p.isAI && !int0.rpsChoices[p.id]);
-          if (aiToPick.length > 0) {
-            aiToPick.forEach(p => { G.aiRpsPick(p.id); });
-            broadcastGameState(room.id);
-            // 若仍有 AI 未出拳，继续
-            const st2 = G.getState(0);
-            const int2 = G._internal();
-            if ((st2.phase === 'rps_cover' || st2.phase === 'rps_pick')) {
-              const remain = st2.players.filter(p => p.status !== 'dead' && p.isAI && !int2.rpsChoices[p.id]);
-              if (remain.length > 0) setTimeout(tryAI, 100);
-            }
-          }
-          return;
-        }
-
-        if (!cur || !cur.isAI) return;
-        if (state.phase !== 'act_turn') return;
-
-        room.game.aiTurn(cur.id);
-        broadcastGameState(room.id);
-        // 若仍是 AI 阶段，立即递归（避免 600ms 延迟）
-        const st2 = G.getState(0);
-        const int2 = G._internal();
-        if (st2.phase === 'act_turn') {
-          const nextWinner = int2.winners[int2.winnerIdx];
-          const nextP = room.players.find(p => p.id === nextWinner);
-          if (nextP && nextP.isAI) setTimeout(tryAI, 50);
-        } else if (st2.phase === 'act_rps') {
-          // rps 阶段也需要 AI 出拳
-          const rpsPlayer = st2.rpsPhasePlayer;
-          const rpsP = room.players.find(p => p.id === rpsPlayer);
-          if (rpsP && rpsP.isAI) {
-            const hand = ['rock','scissors','paper'][Math.floor(Math.random()*3)];
-            setTimeout(() => {
-              room.game.rpsSubmit(rpsPlayer, hand);
-              broadcastGameState(room.id);
-              setTimeout(tryAI, 50);
-            }, 300);
-          }
-        }
-      } finally {
-        pending = false;
-      }
-    };
-    setTimeout(tryAI, 300);
-  }
+
 });
 
 console.log(`🛏️ 起床！游戏服务器启动在 ws://localhost:${PORT}`);
