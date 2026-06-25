@@ -167,7 +167,11 @@ wss.on('connection', (ws) => {
         const aiDiff = ['easy', 'normal', 'hard'].includes(msg.diff) ? msg.diff : 'normal';
         const aiPid = joinRoom(room.id, null, aiName, true, aiDiff);
         if (aiPid === null) { safeSend(ws, JSON.stringify({ type: 'error', msg: '加入AI失败' })); break; }
-        // 不再自动开始游戏 — 等房主点 start_game
+        // 全员 ready（真人 + AI）+ 至少 2 人 → 自动开始游戏
+        if (room.state === 'waiting' && room.players.length >= 2 && room.players.every(pl => pl.ready)) {
+          console.log('[server] 全员 ready，自动开始游戏');
+          startGame(room);
+        }
         break;
       }
 
@@ -179,7 +183,11 @@ wss.on('connection', (ws) => {
         if (!p || p.isAI) return;
         p.ready = !!msg.ready;
         broadcastToRoom(currentRoomId, { type: 'room_update', players: getRoomPlayers(room) });
-        // 不再自动开始游戏 — 等房主点 start_game
+        // 全员 ready（真人 + AI）+ 至少 2 人 → 自动开始游戏
+        if (room.state === 'waiting' && room.players.length >= 2 && room.players.every(pl => pl.ready)) {
+          console.log('[server] 全员 ready，自动开始游戏');
+          startGame(room);
+        }
         break;
       }
 

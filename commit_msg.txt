@@ -1,3 +1,0 @@
-Initial commit: 起床大逃杀 - 服务端 + 小程序 + 网页版
-
-Co-Authored-By: AtomCode (deepseek-v4-flash) <noreply@atomgit.com>
