@@ -38,7 +38,6 @@ function joinRoom(roomId, ws, name, isAI = false, diff = 'normal') {
   const playerId = room.players.length; // 0,1,2,3
   room.players.push({ id: playerId, name, ws, isAI, diff, ready: isAI });
   if (room.hostId == null && !isAI) room.hostId = playerId; // 第一个真人 = 房主 (playerId=0 时 !hostId 是 true 会误判)
-  broadcastToRoom(roomId, { type: 'room_update', hostId: room.hostId, players: getRoomPlayers(room) });
   return playerId;
 }
 
@@ -240,7 +239,9 @@ wss.on('connection', (ws) => {
         rooms.get(roomId).enableEvents = !!msg.enableEvents;
         currentRoomId = roomId;
         currentPlayerId = pid;
+        // 先推 room_joined 再推 room_update，避免 client 渲染 lobby 时 myId 还没设导致 iAmHost=false
         safeSend(ws, JSON.stringify({ type: 'room_joined', roomId, playerId: pid, hostId: rooms.get(roomId).hostId, enableEvents: rooms.get(roomId).enableEvents }));
+        broadcastToRoom(roomId, { type: 'room_update', hostId: rooms.get(roomId).hostId, players: getRoomPlayers(rooms.get(roomId)) });
         break;
       }
 
@@ -254,7 +255,9 @@ wss.on('connection', (ws) => {
         }
         currentRoomId = rid;
         currentPlayerId = pid;
+        // 先推 room_joined 再推 room_update
         safeSend(ws, JSON.stringify({ type: 'room_joined', roomId: rid, playerId: pid, hostId: rooms.get(rid).hostId }));
+        broadcastToRoom(rid, { type: 'room_update', hostId: rooms.get(rid).hostId, players: getRoomPlayers(rooms.get(rid)) });
         break;
       }
 
@@ -272,6 +275,7 @@ wss.on('connection', (ws) => {
         const aiDiff = ['easy', 'normal', 'hard'].includes(msg.diff) ? msg.diff : 'normal';
         const aiPid = joinRoom(room.id, null, aiName, true, aiDiff);
         if (aiPid === null) { safeSend(ws, JSON.stringify({ type: 'error', msg: '加入AI失败' })); break; }
+        broadcastToRoom(currentRoomId, { type: 'room_update', hostId: room.hostId, players: getRoomPlayers(room) });
         // 全员 ready（真人 + AI）+ 至少 2 人 → 自动开始游戏
         if (room.state === 'waiting' && room.players.length >= 2 && room.players.every(pl => pl.ready)) {
           console.log('[server] 全员 ready，自动开始游戏');
