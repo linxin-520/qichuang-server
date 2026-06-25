@@ -585,11 +585,21 @@ function createGame(config) {
           afterAction();
           break;
         case 'wakeUp':
-          if (p.status === 'sleeping') { p.status = 'awake'; log(`🛏️ ${p.name} 起床了`); }
+          if (p.status === 'sleeping') {
+            p.status = 'awake';
+            log(`🛏️ ${p.name} 起床了`, 'good');
+            // 起床不消耗行动点（让玩家醒来后还能动一下）
+            return;
+          }
           afterAction();
           break;
         case 'recoverStun':
-          if (p.status === 'stunned') { p.status = 'awake'; log(`💫 ${p.name} 清醒了过来`); }
+          if (p.status === 'stunned') {
+            p.status = 'awake';
+            log(`💫 ${p.name} 清醒了过来`, 'good');
+            // 清醒不消耗行动点
+            return;
+          }
           afterAction();
           break;
         default:
