@@ -296,8 +296,9 @@ wss.on('connection', (ws) => {
     const G = room.game;
     let pending = false;
     const tryAI = () => {
+      const int0 = G._internal();
       // 找当前行动者
-      const winnerId = G.winners && G.winners[G.winnerIdx];
+      const winnerId = int0.winners && int0.winners[int0.winnerIdx];
       const cur = winnerId !== undefined ? room.players.find(p => p.id === winnerId) : null;
       const state = G.getState(0);
       if (pending) return;
@@ -306,14 +307,15 @@ wss.on('connection', (ws) => {
         // 阶段 1：开局猜拳 — 让还没出拳的 AI 自动出
         if (state.phase === 'rps_cover' || state.phase === 'rps_pick') {
           const aliveNow = G.getState(0).players.filter(p => p.status !== 'dead');
-          const aiToPick = aliveNow.filter(p => p.isAI && !G.rpsChoices[p.id]);
+          const aiToPick = aliveNow.filter(p => p.isAI && !int0.rpsChoices[p.id]);
           if (aiToPick.length > 0) {
             aiToPick.forEach(p => { G.aiRpsPick(p.id); });
             broadcastGameState(room.id);
             // 若仍有 AI 未出拳，继续
             const st2 = G.getState(0);
+            const int2 = G._internal();
             if ((st2.phase === 'rps_cover' || st2.phase === 'rps_pick')) {
-              const remain = st2.players.filter(p => p.status !== 'dead' && p.isAI && !G.rpsChoices[p.id]);
+              const remain = st2.players.filter(p => p.status !== 'dead' && p.isAI && !int2.rpsChoices[p.id]);
               if (remain.length > 0) setTimeout(tryAI, 100);
             }
           }
@@ -327,8 +329,9 @@ wss.on('connection', (ws) => {
         broadcastGameState(room.id);
         // 若仍是 AI 阶段，立即递归（避免 600ms 延迟）
         const st2 = G.getState(0);
+        const int2 = G._internal();
         if (st2.phase === 'act_turn') {
-          const nextWinner = G.winners[G.winnerIdx];
+          const nextWinner = int2.winners[int2.winnerIdx];
           const nextP = room.players.find(p => p.id === nextWinner);
           if (nextP && nextP.isAI) setTimeout(tryAI, 50);
         } else if (st2.phase === 'act_rps') {

@@ -121,6 +121,23 @@ function createGame(config) {
 
   const api = {
     getState(viewerId) { return getPublicState(G, viewerId); },
+    // 暴露内部状态给 server（index.js 的 AI 触发需要读 rpsChoices/winners/phase）
+    _internal() {
+      return {
+        rpsChoices: G.rpsChoices,
+        rpsCurrent: G.rpsCurrent,
+        rpsRetries: G.rpsRetries,
+        winners: G.winners,
+        winnerIdx: G.winnerIdx,
+        actionsLeft: G.actionsLeft,
+        winnersActions: G.winnersActions,
+        phase: G.phase,
+        pendingRps: G.pendingRps,
+        rpsPhasePlayer: G.rpsPhasePlayer,
+        round: G.round,
+        finished: G.finished,
+      };
+    },
 
     startRound() {
       if (G.finished) return;
