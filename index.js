@@ -37,7 +37,7 @@ function joinRoom(roomId, ws, name, isAI = false, diff = 'normal') {
   if (room.players.length >= 4) return null;
   const playerId = room.players.length; // 0,1,2,3
   room.players.push({ id: playerId, name, ws, isAI, diff, ready: isAI });
-  if (!room.hostId && !isAI) room.hostId = playerId; // 第一个真人 = 房主
+  if (room.hostId == null && !isAI) room.hostId = playerId; // 第一个真人 = 房主 (playerId=0 时 !hostId 是 true 会误判)
   broadcastToRoom(roomId, { type: 'room_update', players: getRoomPlayers(room) });
   return playerId;
 }
@@ -167,8 +167,7 @@ wss.on('connection', (ws) => {
         const aiDiff = ['easy', 'normal', 'hard'].includes(msg.diff) ? msg.diff : 'normal';
         const aiPid = joinRoom(room.id, null, aiName, true, aiDiff);
         if (aiPid === null) { safeSend(ws, JSON.stringify({ type: 'error', msg: '加入AI失败' })); break; }
-        // AI 自动准备；2 人就自动开局
-        if (room.players.every(p => p.ready) && room.players.length >= 2) startGame(room);
+        // 不再自动开始游戏 — 等房主点 start_game
         break;
       }
 
@@ -180,9 +179,7 @@ wss.on('connection', (ws) => {
         if (!p || p.isAI) return;
         p.ready = !!msg.ready;
         broadcastToRoom(currentRoomId, { type: 'room_update', players: getRoomPlayers(room) });
-        if (room.players.every(pl => pl.ready) && room.players.length >= 2) {
-          startGame(room);
-        }
+        // 不再自动开始游戏 — 等房主点 start_game
         break;
       }
 
@@ -193,7 +190,16 @@ wss.on('connection', (ws) => {
           safeSend(ws, JSON.stringify({ type: 'error', msg: '只有房主可以开始游戏' }));
           break;
         }
-        if (room.players.length >= 2) startGame(room);
+        // 至少 2 人（真人或 AI 都行），且所有玩家都已准备
+        if (room.players.length < 2) {
+          safeSend(ws, JSON.stringify({ type: 'error', msg: '至少需要 2 名玩家' }));
+          break;
+        }
+        if (!room.players.every(pl => pl.ready)) {
+          safeSend(ws, JSON.stringify({ type: 'error', msg: '所有玩家必须先准备' }));
+          break;
+        }
+        startGame(room);
         break;
       }
 
