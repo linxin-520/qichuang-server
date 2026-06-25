@@ -38,7 +38,7 @@ function joinRoom(roomId, ws, name, isAI = false, diff = 'normal') {
   const playerId = room.players.length; // 0,1,2,3
   room.players.push({ id: playerId, name, ws, isAI, diff, ready: isAI });
   if (room.hostId == null && !isAI) room.hostId = playerId; // 第一个真人 = 房主 (playerId=0 时 !hostId 是 true 会误判)
-  broadcastToRoom(roomId, { type: 'room_update', players: getRoomPlayers(room) });
+  broadcastToRoom(roomId, { type: 'room_update', hostId: room.hostId, players: getRoomPlayers(room) });
   return playerId;
 }
 
@@ -106,6 +106,10 @@ function startGame(room) {
   broadcastToRoom(room.id, { type: 'game_started' });
   broadcastGameState(room.id);
   triggerAITurns(room);
+  // 1.5s 后 round_intro 自动进 rps_cover，broadcast 一次
+  setTimeout(() => {
+    if (room.game) broadcastGameState(room.id);
+  }, 1600);
 }
 
 function triggerAITurns(room) {
@@ -202,7 +206,7 @@ wss.on('connection', (ws) => {
         if (room.players.length === 0) {
           rooms.delete(currentRoomId);
         } else {
-          broadcastToRoom(currentRoomId, { type: 'room_update', players: getRoomPlayers(room) });
+          broadcastToRoom(currentRoomId, { type: 'room_update', hostId: room.hostId, players: getRoomPlayers(room) });
         }
       }
       currentRoomId = null;
@@ -268,7 +272,7 @@ wss.on('connection', (ws) => {
         const p = room.players.find(pl => pl.id === currentPlayerId);
         if (!p || p.isAI) return;
         p.ready = !!msg.ready;
-        broadcastToRoom(currentRoomId, { type: 'room_update', players: getRoomPlayers(room) });
+        broadcastToRoom(currentRoomId, { type: 'room_update', hostId: room.hostId, players: getRoomPlayers(room) });
         // 全员 ready（真人 + AI）+ 至少 2 人 → 自动开始游戏
         if (room.state === 'waiting' && room.players.length >= 2 && room.players.every(pl => pl.ready)) {
           console.log('[server] 全员 ready，自动开始游戏');
@@ -333,7 +337,11 @@ wss.on('connection', (ws) => {
             case 'loc':        room.game.doLocAction(currentPlayerId, target, payload); break;
             case 'skip':       room.game.doSkip(currentPlayerId); break;
             case 'rpsSubmit':  room.game.rpsSubmit(currentPlayerId, hand); break;
-            case 'nextRound':  room.game.startRound(); break;
+            case 'nextRound':
+              room.game.startRound();
+              // 1.5s 后 round_intro → rps_cover，再 broadcast 一次
+              setTimeout(() => { if (room.game) broadcastGameState(currentRoomId); }, 1600);
+              break;
             default:
               safeSend(ws, JSON.stringify({ type: 'error', msg: '未知动作: ' + action }));
               return;

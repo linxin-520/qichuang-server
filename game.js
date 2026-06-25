@@ -182,7 +182,15 @@ function createGame(config) {
       }
 
       G.rpsCurrent = 0;
-      G.phase = 'rps_cover';
+      G.phase = 'round_intro';
+      // 1.5s 后进入猜拳阶段（参考单机版动画）
+      if (G._roundIntroTimer) clearTimeout(G._roundIntroTimer);
+      G._roundIntroTimer = setTimeout(() => {
+        G._roundIntroTimer = null;
+        if (G.phase === 'round_intro') {
+          G.phase = 'rps_cover';
+        }
+      }, 1500);
     },
 
     // 玩家出拳（允许在 rps_cover 和 rps_pick 阶段出拳）
