@@ -108,7 +108,8 @@ wss.on('connection', (ws) => {
       }
       handleMessage(ws, msg);
     } catch (e) {
-      safeSend(ws, JSON.stringify({ type: 'error', msg: '消息格式错误' }));
+      console.error('[handler error]', e && e.message, 'stack=', e && e.stack);
+      safeSend(ws, JSON.stringify({ type: 'error', msg: '消息格式错误: ' + (e && e.message) }));
     }
   });
 
