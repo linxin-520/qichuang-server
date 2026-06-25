@@ -101,7 +101,7 @@ function startGame(room) {
   const names = room.players.map(p => p.name);
   const ais = room.players.map(p => p.isAI);
   const diffs = room.players.map(p => p.diff || 'normal');
-  room.game = createGame({ playerNames: names, playerAIs: ais, playerDiff: diffs, enableEvents: true });
+  room.game = createGame({ playerNames: names, playerAIs: ais, playerDiff: diffs, enableEvents: !!room.enableEvents });
   room.game.startRound();
   broadcastToRoom(room.id, { type: 'game_started' });
   broadcastGameState(room.id);
@@ -217,9 +217,11 @@ wss.on('connection', (ws) => {
         const roomId = createRoom();
         const pid = joinRoom(roomId, ws, (msg.playerName || '玩家').toString().slice(0, 20), false, 'normal');
         if (pid === null) { safeSend(ws, JSON.stringify({ type: 'error', msg: '创建失败' })); break; }
+        // 客户端可传 enableEvents（默认 false）
+        rooms.get(roomId).enableEvents = !!msg.enableEvents;
         currentRoomId = roomId;
         currentPlayerId = pid;
-        safeSend(ws, JSON.stringify({ type: 'room_joined', roomId, playerId: pid, hostId: rooms.get(roomId).hostId }));
+        safeSend(ws, JSON.stringify({ type: 'room_joined', roomId, playerId: pid, hostId: rooms.get(roomId).hostId, enableEvents: rooms.get(roomId).enableEvents }));
         break;
       }
 
@@ -318,7 +320,7 @@ wss.on('connection', (ws) => {
       case 'action': {
         const room = rooms.get(currentRoomId);
         if (!room || !room.game) return;
-        const { action, target, weapon, payload } = msg;
+        const { action, target, weapon, payload, hand } = msg;
         try {
           switch (action) {
             case 'move':       room.game.doMove(currentPlayerId, target); break;
@@ -330,6 +332,8 @@ wss.on('connection', (ws) => {
             case 'skill':      room.game.startSkill(currentPlayerId, target); break;
             case 'loc':        room.game.doLocAction(currentPlayerId, target, payload); break;
             case 'skip':       room.game.doSkip(currentPlayerId); break;
+            case 'rpsSubmit':  room.game.rpsSubmit(currentPlayerId, hand); break;
+            case 'nextRound':  room.game.startRound(); break;
             default:
               safeSend(ws, JSON.stringify({ type: 'error', msg: '未知动作: ' + action }));
               return;
@@ -375,7 +379,7 @@ wss.on('connection', (ws) => {
         safeSend(ws, JSON.stringify({ type: 'error', msg: '未知消息类型' }));
     }
   }
-
+
 });
 
 console.log(`🛏️ 起床！游戏服务器启动在 ws://localhost:${PORT}`);
