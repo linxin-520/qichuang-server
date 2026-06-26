@@ -1,13 +1,14 @@
 {
   "name": "qichuang-server",
-  "version": "1.0.0",
-  "description": "起床！大逃杀桌游 - 服务端",
+  "version": "2.0.0",
+  "description": "起床！大逃杀桌游 - 服务端 (v2 带账号+成就)",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "ws": "^8.16.0",
-    "uuid": "^9.0.0"
+    "better-sqlite3": "^11.10.0",
+    "uuid": "^9.0.0",
+    "ws": "^8.16.0"
   }
 }

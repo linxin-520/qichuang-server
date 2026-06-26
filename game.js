@@ -25,6 +25,7 @@ function getPublicState(G, viewerId) {
       poisoned: p.poisoned,
       isAI: p.isAI,
       kills: p.kills || 0,
+      killBreakdown: p.killBreakdown || { bomb: 0, ranged: 0, melee: 0, strangle: 0, other: 0 },
       trained: p.trained,
       aimed: p.aimed,
       itemCount: p.items.length,
@@ -91,6 +92,7 @@ function createGame(config) {
     loc: `home${i}`,
     items: [],
     kills: 0, hidden: false,
+    killBreakdown: { bomb: 0, ranged: 0, melee: 0, strangle: 0, other: 0 },
     isAI: playerAIs[i] || false,
     aiDiff: playerDiff[i] || 'normal',
   }));
@@ -121,23 +123,6 @@ function createGame(config) {
 
   const api = {
     getState(viewerId) { return getPublicState(G, viewerId); },
-    // 暴露内部状态给 server（index.js 的 AI 触发需要读 rpsChoices/winners/phase）
-    _internal() {
-      return {
-        rpsChoices: G.rpsChoices,
-        rpsCurrent: G.rpsCurrent,
-        rpsRetries: G.rpsRetries,
-        winners: G.winners,
-        winnerIdx: G.winnerIdx,
-        actionsLeft: G.actionsLeft,
-        winnersActions: G.winnersActions,
-        phase: G.phase,
-        pendingRps: G.pendingRps,
-        rpsPhasePlayer: G.rpsPhasePlayer,
-        round: G.round,
-        finished: G.finished,
-      };
-    },
 
     startRound() {
       if (G.finished) return;
@@ -153,7 +138,7 @@ function createGame(config) {
           if (p.poisoned) {
             p.hp--;
             log(`🧪 <b style="color:${p.color}">${p.name}</b> 受到毒素侵蚀，失去1点HP！`, 'kill');
-            if (p.hp <= 0) killPlayer(p.id, '毒发身亡');
+            if (p.hp <= 0) killPlayer(p.id, '毒发身亡', undefined, 'other');
           }
         });
         if (checkWin()) return;
@@ -182,15 +167,7 @@ function createGame(config) {
       }
 
       G.rpsCurrent = 0;
-      G.phase = 'round_intro';
-      // 1.5s 后进入猜拳阶段（参考单机版动画）
-      if (G._roundIntroTimer) clearTimeout(G._roundIntroTimer);
-      G._roundIntroTimer = setTimeout(() => {
-        G._roundIntroTimer = null;
-        if (G.phase === 'round_intro') {
-          G.phase = 'rps_cover';
-        }
-      }, 1500);
+      G.phase = 'rps_cover';
     },
 
     // 玩家出拳（允许在 rps_cover 和 rps_pick 阶段出拳）
@@ -259,14 +236,14 @@ function createGame(config) {
       log(`🚶 ${p.name} 移动到了 ${loc.icon}${loc.name}`);
 
       if (loc.trap && loc.owner !== pid) { loc.trap = false; p.status = 'stunned'; log(`⚙️ ${p.name} 触发了陷阱！`, 'kill'); }
-      if (loc.beartrap) { loc.beartrap = false; p.status = 'stunned'; p.hp--; log(`🪤 ${p.name} 踩中了捕兽夹！`, 'kill'); if (p.hp <= 0) killPlayer(pid, '被捕兽夹害死'); }
+      if (loc.beartrap) { loc.beartrap = false; p.status = 'stunned'; p.hp--; log(`🪤 ${p.name} 踩中了捕兽夹！`, 'kill'); if (p.hp <= 0) killPlayer(pid, '被捕兽夹害死', undefined, 'other'); }
       if (loc.poisoned && p.status !== 'dead') { loc.poisoned = false; p.poisoned = true; log(`🧪 ${p.name} 中毒了！`, 'kill'); }
       // 伏击
       const ambusher = alive().find(x => x.id !== pid && x.loc === destId && x.hidden);
       if (ambusher && p.status !== 'dead') {
         ambusher.hidden = false;
         log(`👻 ${ambusher.name} 伏击了 ${p.name}！`, 'kill');
-        dealDamage(pid, ambusher.items.some(i => i.id === 'enhanced') ? 2 : 1, false, `被 ${ambusher.name} 伏击`, ambusher.id);
+        dealDamage(pid, ambusher.items.some(i => i.id === 'enhanced') ? 2 : 1, false, `被 ${ambusher.name} 伏击`, ambusher.id, 'melee');
       }
       afterAction();
     },
@@ -277,9 +254,10 @@ function createGame(config) {
       if (!atk || !def || atk.status === 'dead' || def.status === 'dead') return;
       if (wpn.ammo) useAmmo(atkId, weaponId);
 
+      const killType = wpn.range === 'ranged' ? 'ranged' : 'melee';
       if (wpn.range === 'ranged' && atk.aimed) {
         atk.aimed = false;
-        dealDamage(defId, wpn.dmg, wpn.ignoreVest, `被 ${atk.name} 精准击杀`, atkId);
+        dealDamage(defId, wpn.dmg, wpn.ignoreVest, `被 ${atk.name} 精准击杀`, atkId, killType);
         afterAction();
         return;
       }
@@ -294,7 +272,7 @@ function createGame(config) {
             def.status = 'stunned';
             log(`⚡ ${atk.name} 用电击枪击晕了 ${def.name}`);
           } else {
-            dealDamage(defId, wpn.dmg, wpn.ignoreVest, `被 ${atk.name} 用${wpn.name}击杀`, atkId);
+            dealDamage(defId, wpn.dmg, wpn.ignoreVest, `被 ${atk.name} 用${wpn.name}击杀`, atkId, killType);
             if (wpn.poisonOnHit && def.status !== 'dead') { def.poisoned = true; log(`🧪 ${def.name} 中毒了！`); }
           }
           afterAction();
@@ -326,7 +304,7 @@ function createGame(config) {
         label: '💣 炸弹反噬',
         stage: 'self',
         onSelfSurvive: () => { nextBombTarget(); },
-        onSelfDie: () => { dealDamage(atkId, 3, false, `被自己的炸弹炸死`); nextBombTarget(); },
+        onSelfDie: () => { dealDamage(atkId, 3, false, `被自己的炸弹炸死`, undefined, 'bomb'); nextBombTarget(); },
       };
       G.phase = 'act_rps';
       G.rpsPhasePlayer = atkId;
@@ -345,7 +323,7 @@ function createGame(config) {
         onWin: () => {
           def.hp--;
           log(`🤏 ${atk.name} 掐住了 ${def.name}，造成1伤害！`, 'kill');
-          if (def.hp <= 0) killPlayer(defId, `被 ${atk.name} 掐死`, atkId);
+          if (def.hp <= 0) killPlayer(defId, `被 ${atk.name} 掐死`, atkId, 'strangle');
           afterAction();
         },
         onLose: () => { log(`🤏 ${atk.name} 偷袭失败`); afterAction(); },
@@ -430,7 +408,7 @@ function createGame(config) {
           onLose = () => {
             p.hp--;
             log(`🏚️ ${p.name} 探索失败被碎石砸伤！`, 'kill');
-            if (p.hp <= 0) killPlayer(pid, '被废墟碎石砸死');
+            if (p.hp <= 0) killPlayer(pid, '被废墟碎石砸死', undefined, 'other');
           };
           break;
         case 'gamble':
@@ -585,21 +563,11 @@ function createGame(config) {
           afterAction();
           break;
         case 'wakeUp':
-          if (p.status === 'sleeping') {
-            p.status = 'awake';
-            log(`🛏️ ${p.name} 起床了`, 'good');
-            // 玩家手动点起床不扣行动点（保留原修的玩家体验）
-            // AI 自动起床也不扣 — AI 行动链由 aiTurn 控制，不靠 afterAction
-            return;
-          }
+          if (p.status === 'sleeping') { p.status = 'awake'; log(`🛏️ ${p.name} 起床了`); }
           afterAction();
           break;
         case 'recoverStun':
-          if (p.status === 'stunned') {
-            p.status = 'awake';
-            log(`💫 ${p.name} 清醒了过来`, 'good');
-            return;
-          }
+          if (p.status === 'stunned') { p.status = 'awake'; log(`💫 ${p.name} 清醒了过来`); }
           afterAction();
           break;
         default:
@@ -685,9 +653,9 @@ function createGame(config) {
       const p = getP(pid);
       if (!p || !p.isAI || p.status === 'dead') return;
 
-      // 强制状态：睡眠/眩晕 — 起床/清醒本身算 1 个行动
-      if (p.status === 'sleeping') { api.doLocAction(pid, 'wakeUp'); afterAction(); return; }
-      if (p.status === 'stunned')  { api.doLocAction(pid, 'recoverStun'); afterAction(); return; }
+      // 强制状态：睡眠/眩晕
+      if (p.status === 'sleeping') { api.doLocAction(pid, 'wakeUp'); return; }
+      if (p.status === 'stunned')  { api.doLocAction(pid, 'recoverStun'); return; }
 
       const loc = locs[p.loc];
       if (!loc) { afterAction(); return; }
@@ -844,7 +812,7 @@ function createGame(config) {
         if (r === 'p1' || (r === 'tie' && getP(rps.currentTarget).trained)) {
           log(`💣 ${getP(rps.currentTarget).name} 躲过了爆炸！`, 'good');
         } else {
-          dealDamage(rps.currentTarget, 3, false, `被炸弹炸死`, rps.atk);
+          dealDamage(rps.currentTarget, 3, false, `被炸弹炸死`, rps.atk, 'bomb');
         }
         rps.targetIdx++;
         nextBombTarget();
@@ -881,13 +849,15 @@ function createGame(config) {
   function useAmmo(pid, itemId) { const g = getP(pid).items.find(it => it.id === itemId); if (g) { g.ammo--; if (g.ammo <= 0) removeItem(pid, itemId); } }
   function log(msg, cls = '') { G.log.push({ msg, cls }); }
 
-  function killPlayer(pid, reason, killerId) {
+  function killPlayer(pid, reason, killerId, killType = 'other') {
     const p = getP(pid);
     p.status = 'dead'; p.hp = 0;
     log(`💀 ${p.name} ${reason}！`, 'kill');
     if (killerId !== undefined && getP(killerId).status !== 'dead') {
-      getP(killerId).kills = (getP(killerId).kills || 0) + 1;
-      if (getP(killerId).kills >= 2) log(`🏴 ${getP(killerId).name} 被通缉！`, 'kill');
+      const killer = getP(killerId);
+      killer.kills = (killer.kills || 0) + 1;
+      killer.killBreakdown[killType] = (killer.killBreakdown[killType] || 0) + 1;
+      if (killer.kills >= 2) log(`🏴 ${killer.name} 被通缉！`, 'kill');
     }
     checkWin();
   }
@@ -903,7 +873,7 @@ function createGame(config) {
     return false;
   }
 
-  function dealDamage(defId, dmg, ignoreVest, source, atkId) {
+  function dealDamage(defId, dmg, ignoreVest, source, atkId, killType = 'other') {
     const def = getP(defId);
     let actual = dmg;
     if (def.protected && actual > 0) {
@@ -924,7 +894,7 @@ function createGame(config) {
     }
     if (actual > 0) {
       def.hp -= actual;
-      if (def.hp <= 0) killPlayer(defId, source, atkId);
+      if (def.hp <= 0) killPlayer(defId, source, atkId, killType);
       else log(`💥 ${def.name} 受到${actual}伤害！`, 'kill');
     }
     return actual;
