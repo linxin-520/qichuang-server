@@ -23,7 +23,7 @@ function safeSend(ws, data) {
 }
 
 function createRoom() {
-  const roomId = uuidv4().slice(0, 8);
+  const roomId = uuidv4().slice(0, 8).toUpperCase();
   rooms.set(roomId, {
     id: roomId,
     players: [],
