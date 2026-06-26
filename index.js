@@ -219,7 +219,7 @@ wss.on('connection', (ws) => {
       }
 
       case 'join_room': {
-        const rid = (msg.roomId || '').toString().slice(0, 16);
+        const rid = (msg.roomId || '').toString().slice(0, 16).toUpperCase();
         if (!rid) { safeSend(ws, JSON.stringify({ type: 'error', msg: '房间号不能为空' })); break; }
         const pid = joinRoom(rid, ws, (msg.playerName || '玩家').toString().slice(0, 20), false, 'normal');
         if (pid === null) {
